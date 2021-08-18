@@ -24,3 +24,7 @@ To run the program, just run:
 ```
     $ python -m euler-parameter-viewer.EulerParameterViewer
 ```
+
+## References
+
+  - https://mathworld.wolfram.com/EulerParameters.html
