@@ -6,7 +6,19 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QGridLayout, QVB
 
 from pyqtgraph.opengl import GLViewWidget, GLLinePlotItem, GLGridItem
 
+class LastifiableListOf4(list):
+    def __init__(self):
+        list.__init__(self, range(4))
+    
+    def lastify(self, num):
+        self.remove(num)
+        self.append(num)
+
+
 class MathProcessor:
+    def __init__(self):
+        self.queue = list(range(4))
+
     def getRotationMatrix(self, e):
         return np.array(
             [[e[0] ** 2 + e[1] ** 2 - e[2] ** 2 - e[3] ** 2,
@@ -41,14 +53,31 @@ class MathProcessor:
 
         return b1, b2, b3
     
-    def recalculateParameters(self):
-        pass
+    def recalculateParameters(self, e, changedCode):
+        self.queue.remove(changedCode)
+
+        for i in self.queue:
+            sumRest = 0
+            for j in range(4):
+                if i != j:
+                    sumRest += e[j] ** 2
+            if sumRest <= 1:
+                e[i] = np.sqrt(1 - sumRest)
+                break
+        
+        self.queue.append(changedCode)
+
+        return e
+
 
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
         QMainWindow.__init__(self, parent)
         self.setWindowTitle("Euler parameter visualizer")
         self.resize(700, 500)
+
+        # Create array to store the Euler parameter
+        self.eulerParam = np.array([1., 0., 0., 0.])
 
         # Create central widget and add Layout
         self.centralwidget = QWidget(self)
@@ -78,7 +107,7 @@ class MainWindow(QMainWindow):
         self.e0slider.setMinimum(0)
         self.e0slider.setSingleStep(1)
         self.e0slider.setPageStep(5)
-        self.e0slider.setSliderPosition(1000)
+        self.e0slider.setSliderPosition(int(1000 * self.eulerParam[0]))
         self.e0indicator = QLabel("1.000", self.e0frame)
         self.e0layout.addWidget(self.e0label)
         self.e0layout.addWidget(self.e0slider)
@@ -93,6 +122,7 @@ class MainWindow(QMainWindow):
         self.e1slider.setMinimum(0)
         self.e1slider.setSingleStep(1)
         self.e1slider.setPageStep(5)
+        self.e1slider.setSliderPosition(int(1000 * self.eulerParam[1]))
         self.e1indicator = QLabel("0.000", self.e1frame)
         self.e1layout.addWidget(self.e1label)
         self.e1layout.addWidget(self.e1slider)
@@ -107,6 +137,7 @@ class MainWindow(QMainWindow):
         self.e2slider.setMinimum(0)
         self.e2slider.setSingleStep(1)
         self.e2slider.setPageStep(5)
+        self.e2slider.setSliderPosition(int(1000 * self.eulerParam[2]))
         self.e2indicator = QLabel("0.000", self.e2frame)
         self.e2layout.addWidget(self.e2label)
         self.e2layout.addWidget(self.e2slider)
@@ -121,6 +152,7 @@ class MainWindow(QMainWindow):
         self.e3slider.setMinimum(0)
         self.e3slider.setSingleStep(1)
         self.e3slider.setPageStep(5)
+        self.e3slider.setSliderPosition(int(1000 * self.eulerParam[3]))
         self.e3indicator = QLabel("0.000", self.e3frame)
         self.e3layout.addWidget(self.e3label)
         self.e3layout.addWidget(self.e3slider)
@@ -142,86 +174,151 @@ class MainWindow(QMainWindow):
         self.draw()
 
         # Connect signals
-        self.e0slider.valueChanged.connect(self.rewriteIndicators)
-        self.e1slider.valueChanged.connect(self.rewriteIndicators)
-        self.e2slider.valueChanged.connect(self.rewriteIndicators)
-        self.e3slider.valueChanged.connect(self.rewriteIndicators)
+        self.recalculate = True
+        self.e0slider.valueChanged.connect(self.onE0Change)
+        self.e1slider.valueChanged.connect(self.onE1Change)
+        self.e2slider.valueChanged.connect(self.onE2Change)
+        self.e3slider.valueChanged.connect(self.onE3Change)
     
     def draw(self):
         # Create items shown in the plot
         self.canonicalBase = GLLinePlotItem()
+        self.canonicalBaseZ = GLLinePlotItem()
         self.rotatedBase = GLLinePlotItem()
+        self.rotatedBaseZ = GLLinePlotItem()
         self.grid = GLGridItem()
 
-        self.canonicalBase.setData(
-            pos=np.array([
-                [0,0,0], [1,0,0],
-                [0,0,0], [0,1,0],
-                [0,0,0], [0,0,1]
-            ]),
-            color=(0,0,1,1)
-        )
-
-        b1, b2, b3 = self.mathProcessor.getBaseCoordinates(
-            [
-                self.e0slider.value() / 1000,
-                self.e1slider.value() / 1000,
-                self.e2slider.value() / 1000,
-                self.e3slider.value() / 1000
-            ]
-        )
-
-        self.rotatedBase.setData(
-            pos=np.array([
-                [0,0,0], [b1[0], b1[1], b1[2]],
-                [0,0,0], [b2[0], b2[1], b2[2]],
-                [0,0,0], [b3[0], b3[1], b3[2]]
-            ]),
-            color=(1,0,0,1)
-        )
+        self.redraw()
 
         # Add items to plot
         self.plotWidget.addItem(self.grid)
         self.plotWidget.addItem(self.canonicalBase)
+        self.plotWidget.addItem(self.canonicalBaseZ)
         self.plotWidget.addItem(self.rotatedBase)
+        self.plotWidget.addItem(self.rotatedBaseZ)
 
     def redraw(self):
+        self.rewriteIndicators()
+
         self.canonicalBase.setData(
             pos=np.array([
                 [0,0,0], [1,0,0],
-                [0,0,0], [0,1,0],
-                [0,0,0], [0,0,1]
+                [0,0,0], [0,1,0]
             ]),
             color=(0,0,1,1)
+        )
+        self.canonicalBaseZ.setData(
+            pos=np.array([
+                [0,0,0], [0,0,1]
+            ]),
+            color=(0,1,1,1)
         )
 
         b1, b2, b3 = self.mathProcessor.getBaseCoordinates(
             [
-                self.e0slider.value() / 1000,
-                self.e1slider.value() / 1000,
-                self.e2slider.value() / 1000,
-                self.e3slider.value() / 1000
+                self.eulerParam[0],
+                self.eulerParam[1],
+                self.eulerParam[2],
+                self.eulerParam[3]
             ]
         )
 
         self.rotatedBase.setData(
             pos=np.array([
-                [0,0,0], [b1[0], b1[1], b1[2]],
-                [0,0,0], [b2[0], b2[1], b2[2]],
-                [0,0,0], [b3[0], b3[1], b3[2]]
+                [0,0,0], [float(b1[0]), float(b1[1]), float(b1[2])],
+                [0,0,0], [float(b2[0]), float(b2[1]), float(b2[2])]
             ]),
             color=(1,0,0,1)
         )
+        self.rotatedBaseZ.setData(
+            pos=np.array([
+                [0,0,0], [float(b3[0]), float(b3[1]), float(b3[2])]
+            ]),
+            color=(1,1,0,1)
+        )
 
     @pyqtSlot()
-    def rewriteIndicators(self):
-        self.e0indicator.setText("{:.3f}".format(self.e0slider.value() / 1000))
-        self.e1indicator.setText("{:.3f}".format(self.e1slider.value() / 1000))
-        self.e2indicator.setText("{:.3f}".format(self.e2slider.value() / 1000))
-        self.e3indicator.setText("{:.3f}".format(self.e3slider.value() / 1000))
+    def onE0Change(self):
+        if self.recalculate:
+            self.eulerParam[0] = self.e0slider.value() / 1000
+            self.eulerParam = self.mathProcessor.recalculateParameters(
+                self.eulerParam,
+                0
+            )
+            self.recalculate = False
+
+            self.e0slider.setSliderPosition(int(1000 * self.eulerParam[0]))
+            self.e1slider.setSliderPosition(int(1000 * self.eulerParam[1]))
+            self.e2slider.setSliderPosition(int(1000 * self.eulerParam[2]))
+            self.e3slider.setSliderPosition(int(1000 * self.eulerParam[3]))
+
+            self.recalculate = True
+
+        self.redraw()
+    
+    @pyqtSlot()
+    def onE1Change(self):
+        if self.recalculate:
+            self.eulerParam[1] = self.e1slider.value() / 1000
+            self.eulerParam = self.mathProcessor.recalculateParameters(
+                self.eulerParam,
+                1
+            )
+            self.recalculate = False
+
+            self.e0slider.setSliderPosition(int(1000 * self.eulerParam[0]))
+            self.e1slider.setSliderPosition(int(1000 * self.eulerParam[1]))
+            self.e2slider.setSliderPosition(int(1000 * self.eulerParam[2]))
+            self.e3slider.setSliderPosition(int(1000 * self.eulerParam[3]))
+
+            self.recalculate = True
+
+        self.redraw()
+    
+    @pyqtSlot()
+    def onE2Change(self):
+        if self.recalculate:
+            self.eulerParam[2] = self.e2slider.value() / 1000
+            self.eulerParam = self.mathProcessor.recalculateParameters(
+                self.eulerParam,
+                2
+            )
+            self.recalculate = False
+
+            self.e0slider.setSliderPosition(int(1000 * self.eulerParam[0]))
+            self.e1slider.setSliderPosition(int(1000 * self.eulerParam[1]))
+            self.e2slider.setSliderPosition(int(1000 * self.eulerParam[2]))
+            self.e3slider.setSliderPosition(int(1000 * self.eulerParam[3]))
+
+            self.recalculate = True
+
+        self.redraw()
+    
+    @pyqtSlot()
+    def onE3Change(self):
+        if self.recalculate:
+            self.eulerParam[3] = self.e3slider.value() / 1000
+            self.eulerParam = self.mathProcessor.recalculateParameters(
+                self.eulerParam,
+                3
+            )
+            self.recalculate = False
+
+            self.e0slider.setSliderPosition(int(1000 * self.eulerParam[0]))
+            self.e1slider.setSliderPosition(int(1000 * self.eulerParam[1]))
+            self.e2slider.setSliderPosition(int(1000 * self.eulerParam[2]))
+            self.e3slider.setSliderPosition(int(1000 * self.eulerParam[3]))
+
+            self.recalculate = True
 
         self.redraw()
 
+
+    def rewriteIndicators(self):
+        self.e0indicator.setText("{:.3f}".format(self.eulerParam[0]))
+        self.e1indicator.setText("{:.3f}".format(self.eulerParam[1]))
+        self.e2indicator.setText("{:.3f}".format(self.eulerParam[2]))
+        self.e3indicator.setText("{:.3f}".format(self.eulerParam[3]))
 
 
 
