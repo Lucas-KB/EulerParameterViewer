@@ -61,14 +61,26 @@ class MathProcessor:
     def recalculateParameters(self, e, changedCode):
         self.queue.remove(changedCode)
 
-        for i in self.queue:
-            sumRest = 0
-            for j in range(4):
-                if i != j:
-                    sumRest += e[j] ** 2
-            if sumRest <= 1:
-                e[i] = np.sqrt(1 - sumRest)
-                break
+        firstPass = True
+        externalCounter = 0
+        while sum(np.square(e)) > 1 or firstPass:
+            if not firstPass:
+                e[self.queue[externalCounter]] -= min(e[self.queue[externalCounter]], np.sqrt(sum(np.square(e)) - 1))
+
+                if externalCounter < 2:
+                    externalCounter += 1
+                else:
+                    externalCounter = 0
+
+            for i in self.queue:
+                sumRest = 0
+                for j in range(4):
+                    if i != j:
+                        sumRest += e[j] ** 2
+                if sumRest <= 1:
+                    e[i] = np.sqrt(1 - sumRest)
+                    break
+            firstPass = False
 
         self.queue.append(changedCode)
 
